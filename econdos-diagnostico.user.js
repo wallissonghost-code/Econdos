@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de API (somente leitura)
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.4.0
-// @description  Registra rotas, status e estrutura de respostas GET sem modificar dados.
+// @version      1.5.0
+// @description  Inspeciona estrutura técnica de dispositivos e receptores sem alterar requisições.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
 // @run-at       document-start
@@ -41,12 +41,39 @@
       return safe(obj);
     } catch { return []; }
   }
+  function estruturaTecnica(body) {
+    try {
+      const data = typeof body === 'string' ? JSON.parse(body) : body;
+      const tipo = v => v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+      const resumo = (v, depth = 0) => {
+        if (depth > 3) return { tipo: tipo(v) };
+        if (Array.isArray(v)) return { tipo: 'array', quantidade: v.length, exemploEstrutura: v.length ? resumo(v[0], depth + 1) : null };
+        if (v && typeof v === 'object') {
+          const out = {};
+          for (const [k, val] of Object.entries(v).slice(0, 30)) {
+            if (/token|secret|pass|senha|auth|cookie|key|serial|owner|email|phone|document|cpf|cnpj|name|nome|id$/i.test(k)) out[k] = '[oculto]';
+            else out[k] = resumo(val, depth + 1);
+          }
+          return { tipo: 'object', campos: out };
+        }
+        return { tipo: tipo(v), vazio: v === '' || v === null };
+      };
+      if (!data || typeof data !== 'object') return null;
+      const obj = Array.isArray(data) ? data[0] : data;
+      if (!obj || typeof obj !== 'object') return resumo(data);
+      return { tipo: tipo(data), quantidade: Array.isArray(data) ? data.length : undefined,
+        campos: Object.keys(obj).slice(0, 40),
+        receptors: Object.hasOwn(obj, 'receptors') ? resumo(obj.receptors) : '[não presente]',
+        type: Object.hasOwn(obj, 'type') ? resumo(obj.type) : '[não presente]' };
+    } catch { return null; }
+  }
   function record(method, url, status, ms, body, reqBody, getFields) {
     if (!relevant(url)) return;
     const item = { hora: new Date().toLocaleTimeString(), metodo: String(method || 'GET').toUpperCase(),
       caminho: path(url), status, duracaoMs: Math.round(ms), categoria: status === 0 ? 'rede/cancelamento' : status >= 500 ? 'servidor' : status >= 400 ? 'requisição' : 'sucesso', erro: scrub(body) };
     if (['PUT','PATCH'].includes(item.metodo)) item.camposEnviados = campos(reqBody);
     if (item.metodo === 'GET' && status >= 200 && status < 300) item.camposResposta = getFields || [];
+    if (['PUT','PATCH'].includes(item.metodo)) item.estruturaEnviada = estruturaTecnica(reqBody);
     logs.push(item); if (logs.length > MAX) logs.shift();
     console[status >= 400 || status === 0 ? 'warn' : 'info']('[eCondos diagnóstico]', item);
     render();
