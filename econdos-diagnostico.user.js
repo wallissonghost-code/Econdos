@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de API (somente leitura)
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.5.0
-// @description  Inspeciona estrutura técnica de dispositivos e receptores sem alterar requisições.
+// @version      1.6.0
+// @description  Observa cliques, formulários e API nos dois sistemas, sem modificar requisições.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
 // @run-at       document-start
@@ -78,10 +78,48 @@
     console[status >= 400 || status === 0 ? 'warn' : 'info']('[eCondos diagnóstico]', item);
     render();
   }
+
+  // Observação passiva de telas: registra apenas rótulos e tipos, nunca valores digitados.
+  const uiLogs = [];
+  const UI_MAX = 80;
+  const cleanLabel = value => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 90);
+  function safeLabel(el) {
+    const raw = el?.getAttribute?.('aria-label') || el?.getAttribute?.('title') ||
+      (el?.tagName === 'INPUT' ? el.getAttribute('placeholder') : '') ||
+      el?.innerText || el?.textContent || '';
+    const label = cleanLabel(raw);
+    return /senha|password|token|secret|cpf|cnpj|e-mail|email|telefone|serial|chave|key/i.test(label)
+      ? '[rótulo protegido]' : label;
+  }
+  function snapshotUI(reason, target) {
+    const fields = Array.from(document.querySelectorAll('main input, main select, main textarea, [role="dialog"] input, [role="dialog"] select, [role="dialog"] textarea, form input, form select, form textarea'))
+      .filter(el => !el.closest('#econdos-diagnostico') && el.type !== 'hidden' && el.type !== 'password')
+      .slice(0, 45).map(el => ({
+        tag: el.tagName.toLowerCase(), tipo: el.getAttribute('type') || '',
+        rotulo: safeLabel(el.labels?.[0]) || safeLabel(el.closest('label')) || safeLabel(el),
+        opcoes: el.tagName === 'SELECT' ? Array.from(el.options).slice(0, 25).map(o => cleanLabel(o.textContent)) : undefined
+      }));
+    const headings = Array.from(document.querySelectorAll('h1,h2,h3,[role="dialog"] [role="heading"]')).slice(0, 12).map(safeLabel);
+    const item = { hora: new Date().toLocaleTimeString(), origem: location.hostname,
+      acao: reason, alvo: target ? { elemento: target.tagName?.toLowerCase(), rotulo: safeLabel(target) } : undefined,
+      titulos: headings, campos: fields };
+    uiLogs.push(item); if (uiLogs.length > UI_MAX) uiLogs.shift();
+    console.info('[eCondos interface]', item);
+    render();
+  }
+  document.addEventListener('click', event => {
+    if (event.target?.closest?.('#econdos-diagnostico')) return;
+    const target = event.target?.closest?.('button,a,[role="button"],[role="tab"],select,option');
+    if (!target) return;
+    setTimeout(() => snapshotUI('clique', target), 300);
+  }, true);
+  document.addEventListener('change', event => {
+    if (event.target?.matches?.('select')) snapshotUI('selecao', event.target);
+  }, true);
   function render() {
     let panel = document.getElementById('econdos-diagnostico');
     if (!panel || !panel.isConnected) return;
-    panel.querySelector('[data-count]').textContent = String(logs.length);
+    panel.querySelector('[data-count]').textContent = String(logs.length + uiLogs.length);
     const last = logs[logs.length - 1];
     panel.querySelector('[data-last]').textContent = last
       ? last.metodo + ' ' + last.status + ' · ' + last.caminho + ' · ' + last.erro
@@ -94,7 +132,7 @@
     panel.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;background:#17212b;color:white;padding:12px;border-radius:10px;font:12px Arial;max-width:360px;box-shadow:0 3px 16px #0006';
     panel.innerHTML = '<b>Diagnóstico eCondos</b> · operações: <span data-count>0</span><div data-last style="margin:8px 0;overflow-wrap:anywhere">Aguardando operações...</div><button type="button" data-copy>Copiar relatório</button> <button type="button" data-close>Fechar painel</button>';
     panel.querySelector('[data-copy]').onclick = () => {
-      const report = JSON.stringify(logs, null, 2);
+      const report = JSON.stringify({ api: logs, interface: uiLogs }, null, 2);
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(report).catch(() => console.log(report));
       else console.log(report);
     };
@@ -135,5 +173,5 @@
     }, { once: true });
     return send.apply(this, args);
   };
-  window.__econdosDiagnostico = { relatorio: () => logs.map(x => ({...x})), limpar: () => { logs.length = 0; render(); } };
+  window.__econdosDiagnostico = { relatorio: () => ({api: logs.map(x => ({...x})), interface: uiLogs.map(x => ({...x}))}), limpar: () => { logs.length = 0; uiLogs.length = 0; render(); } };
 })();
