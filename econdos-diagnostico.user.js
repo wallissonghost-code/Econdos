@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de API (somente leitura)
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.0.0
+// @version      1.1.0
 // @description  Monitora falhas HTTP de sincronização e exclusão sem alterar requisições.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
@@ -13,19 +13,21 @@
   if (window.__econdosDiagnostico) return;
   const logs = [];
   const MAX = 40;
+  const relevant = url => { try { const p = new URL(url, location.href).pathname; return /\/api\/v\d+\/condos\/.*\/(devices|sync)(\/|$)/i.test(p); } catch { return false; } };
   const scrub = s => String(s || '')
     .replace(/https?:\/\/[^\s"'<>]+/gi, '[URL]')
     .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[EMAIL]')
     .replace(/\b\d{5,}\b/g, '[ID]')
+    .replace(/\b[a-f0-9]{16,}\b/gi, '[ID]')
     .slice(0, 500);
   const path = url => {
-    try { return new URL(url, location.href).pathname.replace(/[a-f0-9]{8}-[a-f0-9-]{20,}/gi, '[ID]').replace(/\b\d{5,}\b/g, '[ID]'); }
+    try { return new URL(url, location.href).pathname.replace(/[a-f0-9]{8}-[a-f0-9-]{20,}/gi, '[ID]').replace(/\b\d{5,}\b/g, '[ID]').replace(/\b[a-f0-9]{16,}\b/gi, '[ID]'); }
     catch { return '[caminho indisponível]'; }
   };
   function record(method, url, status, ms, body) {
-    if (status < 400 && status !== 0) return;
+    if (!relevant(url) || (status < 400 && status !== 0)) return;
     const item = { hora: new Date().toLocaleTimeString(), metodo: String(method || 'GET').toUpperCase(),
-      caminho: path(url), status, duracaoMs: Math.round(ms), erro: scrub(body) };
+      caminho: path(url), status, duracaoMs: Math.round(ms), categoria: status === 0 ? 'rede/cancelamento' : status >= 500 ? 'servidor' : 'requisição', erro: scrub(body) };
     logs.push(item); if (logs.length > MAX) logs.shift();
     console.warn('[eCondos diagnóstico]', item);
     render();
