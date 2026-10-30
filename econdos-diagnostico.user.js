@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de API (somente leitura)
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.2.0
-// @description  Compara sucessos e falhas de dispositivos sem alterar requisições.
+// @version      1.3.0
+// @description  Compara sucessos, falhas e nomes de campos enviados sem alterar requisições.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
 // @run-at       document-start
@@ -24,10 +24,19 @@
     try { return new URL(url, location.href).pathname.replace(/[a-f0-9]{8}-[a-f0-9-]{20,}/gi, '[ID]').replace(/\b\d{5,}\b/g, '[ID]').replace(/\b[a-f0-9]{16,}\b/gi, '[ID]'); }
     catch { return '[caminho indisponível]'; }
   };
-  function record(method, url, status, ms, body) {
+  function campos(body) {
+    try {
+      const data = typeof body === 'string' ? JSON.parse(body) : body;
+      if (data && Object.getPrototypeOf(data) === Object.prototype)
+        return Object.keys(data).filter(k => /^[a-zA-Z_][\w-]{0,60}$/.test(k)).slice(0, 40);
+    } catch {}
+    return [];
+  }
+  function record(method, url, status, ms, body, reqBody) {
     if (!relevant(url)) return;
     const item = { hora: new Date().toLocaleTimeString(), metodo: String(method || 'GET').toUpperCase(),
       caminho: path(url), status, duracaoMs: Math.round(ms), categoria: status === 0 ? 'rede/cancelamento' : status >= 500 ? 'servidor' : status >= 400 ? 'requisição' : 'sucesso', erro: scrub(body) };
+    if (['PUT','PATCH'].includes(item.metodo)) item.camposEnviados = campos(reqBody);
     logs.push(item); if (logs.length > MAX) logs.shift();
     console[status >= 400 || status === 0 ? 'warn' : 'info']('[eCondos diagnóstico]', item);
     render();
@@ -63,10 +72,11 @@
     const url = typeof input === 'string' ? input : input?.url;
     const method = init.method || input?.method || 'GET';
     const start = performance.now();
+    const reqBody = init.body;
     return originalFetch.apply(this, args).then(response => {
-      if (relevant(url)) { if (response.ok) record(method, url, response.status, performance.now() - start, '[resposta omitida por privacidade]'); else response.clone().text().then(t => record(method, url, response.status, performance.now() - start, t)).catch(() => record(method, url, response.status, performance.now() - start, '[resposta inacessível]')); }
+      if (relevant(url)) { if (response.ok) record(method, url, response.status, performance.now() - start, '[resposta omitida por privacidade]', reqBody); else response.clone().text().then(t => record(method, url, response.status, performance.now() - start, t, reqBody)).catch(() => record(method, url, response.status, performance.now() - start, '[resposta inacessível]', reqBody)); }
       return response;
-    }, err => { record(method, url, 0, performance.now() - start, err.message); throw err; });
+    }, err => { record(method, url, 0, performance.now() - start, err.message, reqBody); throw err; });
   };
   const open = XMLHttpRequest.prototype.open;
   const send = XMLHttpRequest.prototype.send;
@@ -80,7 +90,7 @@
         let body = '';
         try { body = this.responseType === '' || this.responseType === 'text' ? this.responseText : '[resposta não textual]'; }
         catch { body = '[resposta inacessível]'; }
-        record(this.__ecDiag?.method, this.__ecDiag?.url, this.status, performance.now() - start, this.status >= 400 || this.status === 0 ? body : '[resposta omitida por privacidade]');
+        record(this.__ecDiag?.method, this.__ecDiag?.url, this.status, performance.now() - start, this.status >= 400 || this.status === 0 ? body : '[resposta omitida por privacidade]', args[0]);
       }
     }, { once: true });
     return send.apply(this, args);
