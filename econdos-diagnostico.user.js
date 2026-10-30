@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de API (somente leitura)
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.6.0
+// @version      1.7.0
 // @description  Observa cliques, formulários e API nos dois sistemas, sem modificar requisições.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
@@ -109,9 +109,10 @@
   }
   document.addEventListener('click', event => {
     if (event.target?.closest?.('#econdos-diagnostico')) return;
-    const target = event.target?.closest?.('button,a,[role="button"],[role="tab"],select,option');
+    const target = event.target?.closest?.('button,a,[role="button"],[role="tab"],select,option,label,[onclick],[class*="card"],[class*="Card"]') || event.target;
     if (!target) return;
     setTimeout(() => snapshotUI('clique', target), 300);
+    setTimeout(() => snapshotUI('tela seguinte', target), 1000);
   }, true);
   document.addEventListener('change', event => {
     if (event.target?.matches?.('select')) snapshotUI('selecao', event.target);
