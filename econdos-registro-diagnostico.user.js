@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de Registro de Encomendas
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.4.0
+// @version      1.5.0
 // @description  Observa o fluxo de cadastro e upload de encomendas sem modificar requisições ou registrar dados pessoais.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
@@ -30,12 +30,12 @@
   const technical = new Set(['type', 'status', 'subType']);
   const safeTechnical = value => typeof value === 'string' && /^[a-zA-Z_ -]{1,50}$/.test(value) ? value : '[omitido]';
   const schema = (value, depth = 0, keyName = '') => {
-    if (depth > 6) return '[profundidade limitada]';
+    if (depth > 4) return '[profundidade limitada]';
     if (value === null) return { tipo: 'null' };
     if (Array.isArray(value)) return { tipo: 'array', quantidade: value.length, itens: value.slice(0, 3).map(v => schema(v, depth + 1)) };
     if (typeof value === 'object') {
       return { tipo: 'objeto', propriedades: Object.fromEntries(
-        Object.entries(value).slice(0, 50).map(([key, val]) => [
+        Object.entries(value).slice(0, 25).map(([key, val]) => [
           sensitive.test(key) ? '[campo sensível]' : key.slice(0, 60),
           sensitive.test(key) ? { tipo: Array.isArray(val) ? 'array' : typeof val, protegido: true } : schema(val, depth + 1, key)
         ])
@@ -56,7 +56,7 @@
     if (typeof body === 'string') {
       try {
         const obj = JSON.parse(body);
-        if (obj && typeof obj === 'object') return { tipo: 'JSON', estrutura: schema(obj) };
+        if (obj && typeof obj === 'object') return { tipo: 'JSON', estrutura: schema(obj), resumoCadastro: obj && typeof obj === 'object' && ('pictures' in obj || 'subType' in obj) ? { type: safeTechnical(obj.type), status: safeTechnical(obj.status), subType: safeTechnical(obj.subType), pictures: Array.isArray(obj.pictures) ? { quantidade: obj.pictures.length, tipoItem: typeof obj.pictures[0], referencia: '[omitida]' } : { tipo: typeof obj.pictures }, camposUnidade: Object.keys(obj).filter(k => /unit|bloco|apart|dest|viewer|resident|morador/i.test(k)).map(k => ({ campo: k, tipo: typeof obj[k] })) } : undefined };
       } catch {}
       return { tipo: 'texto', tamanhoCaracteres: body.length };
     }
@@ -65,8 +65,11 @@
   };
   const responseInfo = text => {
     try {
-      const parsed = JSON.parse(text);
-      return { tipo: 'JSON', estrutura: schema(parsed), referenciaImagem: parsed && typeof parsed === 'object' ? Object.keys(parsed).filter(k => /^(url|path|file|filename|key|location|id|_id)$/i.test(k)).map(k => ({ campo: k, tipo: typeof parsed[k], valor: '[omitido]' })) : [] };
+      const data = JSON.parse(text);
+      const first = Array.isArray(data) ? data[0] : data;
+      if (!first || typeof first !== 'object') return { tipo: typeof first };
+      return { tipo: Array.isArray(data) ? 'array' : 'objeto', quantidade: Array.isArray(data) ? data.length : undefined,
+        campos: ['_id', 'id', 'url', 'thumbnail', 'type', 'bytes', 'condo'].filter(k => Object.hasOwn(first, k)).map(k => ({ nome: k, tipo: typeof first[k], valor: k === 'type' ? safeTechnical(first[k]) : '[omitido]' })) };
     } catch { return { tipo: 'não JSON' }; }
   };
   const uploadPath = url => /\/files\/upload(?:\/|$)/i.test(new URL(url, location.href).pathname);
@@ -91,7 +94,7 @@
     panel.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;background:#17212b;color:white;padding:12px;border-radius:10px;font:12px Arial;max-width:340px;box-shadow:0 3px 16px #0006';
     panel.innerHTML = '<b>Registro de encomendas · diagnóstico</b><div style="margin:8px 0">Eventos: <span data-count>0</span></div><div data-last style="margin:8px 0;overflow-wrap:anywhere"></div><button type="button" data-copy>Copiar relatório</button> <button type="button" data-clear>Limpar</button> <button type="button" data-close>Fechar</button>';
     panel.querySelector('[data-copy]').onclick = () => {
-      const data = JSON.stringify({ versao: '1.4.0', eventos: events }, null, 2);
+      const data = JSON.stringify({ versao: '1.5.0', eventos: events }, null, 2);
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(data).catch(() => console.log(data));
       else console.log(data);
     };
@@ -158,5 +161,5 @@
     if (keywords.test(labels) || keywords.test(location.pathname)) log({ evento: 'Formulário enviado', campos: Array.from(form.elements).slice(0, 35).map(el => sensitive.test(el.name || '') ? '[protegido]' : String(el.name || el.tagName).slice(0, 45)) });
   }, true);
   window.__ecRegistroDiag = { relatorio: () => events.map(e => ({ ...e })), limpar: () => { events.length = 0; paint(); } };
-  log({ evento: 'Monitor iniciado', versao: '1.4.0', origem: location.hostname });
+  log({ evento: 'Monitor iniciado', versao: '1.5.0', origem: location.hostname });
 })();
