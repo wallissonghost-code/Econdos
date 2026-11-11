@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de Registro de Encomendas
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.6.0
+// @version      1.7.0
 // @description  Observa o fluxo de cadastro e upload de encomendas sem modificar requisições ou registrar dados pessoais.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
@@ -22,9 +22,11 @@
         .replace(/\b\d{3,}\b/g, ':numero');
     } catch { return '[indisponível]'; }
   };
+  const loginScreen = () => /login|signin|sign-in|entrar|auth/i.test(location.pathname) || !!document.querySelector('input[type="password"]');
+  const targetInfo = url => { try { const u = new URL(url, location.href); const local = u.hostname === 'econdos.com.br' || u.hostname.endsWith('.econdos.com.br'); return { dominio: u.hostname, caminho: local ? safePath(url) : '[oculto: domínio externo]' }; } catch { return { dominio: '[indisponível]', caminho: '[indisponível]' }; } };
   const relevant = (url, method = 'GET') => {
     const m = String(method).toUpperCase();
-    try { const u = new URL(url, location.href); return (u.protocol === 'https:' && (u.hostname === 'econdos.com.br' || u.hostname.endsWith('.econdos.com.br'))) && (/^(POST|PUT|PATCH|DELETE)$/.test(m) || keywords.test(u.pathname)); } catch { return false; }
+    try { const u = new URL(url, location.href); return u.protocol === 'https:' && ((u.hostname === 'econdos.com.br' || u.hostname.endsWith('.econdos.com.br')) && (/^(POST|PUT|PATCH|DELETE)$/.test(m) || keywords.test(u.pathname)) || (loginScreen() && /^(POST|PUT|PATCH)$/.test(m))); } catch { return false; }
   };
   // Estrutura profunda sem valores: evita expor moradores, identificadores e credenciais.
   const technical = new Set(['type', 'status', 'subType']);
@@ -94,7 +96,7 @@
     panel.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;background:#17212b;color:white;padding:12px;border-radius:10px;font:12px Arial;max-width:340px;box-shadow:0 3px 16px #0006';
     panel.innerHTML = '<b>Registro de encomendas · diagnóstico</b><div style="margin:8px 0">Eventos: <span data-count>0</span></div><div data-last style="margin:8px 0;overflow-wrap:anywhere"></div><button type="button" data-copy>Copiar relatório</button> <button type="button" data-clear>Limpar</button> <button type="button" data-close>Fechar</button>';
     panel.querySelector('[data-copy]').onclick = () => {
-      const data = JSON.stringify({ versao: '1.6.0', eventos: events }, null, 2);
+      const data = JSON.stringify({ versao: '1.7.0', eventos: events }, null, 2);
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(data).catch(() => console.log(data));
       else console.log(data);
     };
@@ -114,11 +116,11 @@
     const start = performance.now();
     const info = bodyInfo(init.body);
     return originalFetch.apply(this, args).then(response => {
-      log({ evento: 'HTTP fetch', metodo: method, caminho: safePath(url), status: response.status, duracaoMs: Math.round(performance.now() - start), envio: info, autenticacao: { authorizationPresente: !!(init.headers && (new Headers(init.headers)).has('authorization')), credentials: init.credentials || 'padrão do navegador' } });
+      log({ evento: 'HTTP fetch', metodo: method, ...targetInfo(url), status: response.status, duracaoMs: Math.round(performance.now() - start), envio: info, autenticacao: { authorizationPresente: !!(init.headers && (new Headers(init.headers)).has('authorization')), credentials: init.credentials || 'padrão do navegador' } });
       if (uploadPath(url)) response.clone().text().then(t => log({ evento: 'Resposta upload fetch', caminho: safePath(url), resposta: responseInfo(t.slice(0, 100000)) })).catch(() => {});
       return response;
     }, error => {
-      log({ evento: 'HTTP fetch falhou', metodo: method, caminho: safePath(url), erroTipo: error?.name || 'erro' });
+      log({ evento: 'HTTP fetch falhou', metodo: method, ...targetInfo(url), erroTipo: error?.name || 'erro' });
       throw error;
     });
   };
@@ -145,7 +147,7 @@
       this.addEventListener('loadend', () => {
         log({
           evento: 'HTTP XHR', metodo: String(req.method).toUpperCase(),
-          caminho: safePath(req.url), status: this.status,
+          ...targetInfo(req.url), status: this.status,
           duracaoMs: Math.round(performance.now() - start), envio,
           autenticacao: { authorizationPresente: !!req.authorization, cookiesDeSessao: 'não inspecionados', contentType: req.contentType || 'não informado' }
         });
@@ -168,8 +170,10 @@
   document.addEventListener('submit', event => {
     const form = event.target;
     const labels = Array.from(form.querySelectorAll('button,input[type="submit"]')).map(el => el.innerText || el.value || '').join(' ');
-    if (keywords.test(labels) || keywords.test(location.pathname)) log({ evento: 'Formulário enviado', campos: Array.from(form.elements).slice(0, 35).map(el => sensitive.test(el.name || '') ? '[protegido]' : String(el.name || el.tagName).slice(0, 45)) });
+    if (keywords.test(labels) || keywords.test(location.pathname)) log({ evento: 'Formulário enviado', destino: targetInfo(form.action || location.href), metodo: String(form.method || 'GET').toUpperCase(), campos: Array.from(form.elements).slice(0, 35).map(el => sensitive.test(el.name || '') ? '[protegido]' : String(el.name || el.tagName).slice(0, 45)) });
   }, true);
+  const originalBeacon = navigator.sendBeacon?.bind(navigator);
+  if (originalBeacon) navigator.sendBeacon = function(url, data) { if (loginScreen()) log({ evento: 'Beacon', ...targetInfo(url), envio: { tipo: data instanceof FormData ? 'FormData' : typeof data } }); return originalBeacon(url, data); };
   window.__ecRegistroDiag = { relatorio: () => events.map(e => ({ ...e })), limpar: () => { events.length = 0; paint(); } };
-  log({ evento: 'Monitor iniciado', versao: '1.6.0', origem: location.hostname });
+  log({ evento: 'Monitor iniciado', versao: '1.7.0', origem: location.hostname });
 })();
