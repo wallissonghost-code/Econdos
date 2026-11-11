@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de Registro de Encomendas
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.1.0
+// @version      1.2.0
 // @description  Observa o fluxo de cadastro e upload de encomendas sem modificar requisições ou registrar dados pessoais.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
@@ -24,7 +24,7 @@
   };
   const relevant = (url, method = 'GET') => {
     const m = String(method).toUpperCase();
-    try { const u = new URL(url, location.href); return u.origin === location.origin && (/^(POST|PUT|PATCH)$/.test(m) || keywords.test(u.pathname)); } catch { return false; }
+    try { const u = new URL(url, location.href); return (u.protocol === 'https:' && (u.hostname === 'econdos.com.br' || u.hostname.endsWith('.econdos.com.br'))) && (/^(POST|PUT|PATCH|DELETE)$/.test(m) || keywords.test(u.pathname)); } catch { return false; }
   };
   const bodyInfo = body => {
     if (body instanceof FormData) {
@@ -67,7 +67,7 @@
     panel.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;background:#17212b;color:white;padding:12px;border-radius:10px;font:12px Arial;max-width:340px;box-shadow:0 3px 16px #0006';
     panel.innerHTML = '<b>Registro de encomendas · diagnóstico</b><div style="margin:8px 0">Eventos: <span data-count>0</span></div><div data-last style="margin:8px 0;overflow-wrap:anywhere"></div><button type="button" data-copy>Copiar relatório</button> <button type="button" data-clear>Limpar</button> <button type="button" data-close>Fechar</button>';
     panel.querySelector('[data-copy]').onclick = () => {
-      const data = JSON.stringify({ versao: '1.1.0', eventos: events }, null, 2);
+      const data = JSON.stringify({ versao: '1.2.0', eventos: events }, null, 2);
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(data).catch(() => console.log(data));
       else console.log(data);
     };
@@ -81,7 +81,7 @@
   const originalFetch = window.fetch;
   if (originalFetch) window.fetch = function (...args) {
     const request = args[0], init = args[1] || {};
-    const url = typeof request === 'string' ? request : request?.url;
+    const url = typeof request === 'string' ? request : request?.url || (request instanceof URL ? request.href : null);
     const method = String(init.method || request?.method || 'GET').toUpperCase();
     if (!url || !relevant(url, method)) return originalFetch.apply(this, args);
     const start = performance.now();
@@ -114,10 +114,10 @@
     return xhrSend.apply(this, arguments);
   };
   document.addEventListener('click', event => {
-    const target = event.target?.closest?.('button,[role="button"],input[type="submit"]');
+    const target = event.target?.closest?.('button,[role="button"],input[type="submit"],a');
     if (!target || target.closest('#ec-registro-diag')) return;
     const label = String(target.getAttribute('aria-label') || target.innerText || target.value || '').trim().slice(0, 80);
-    if (keywords.test(label)) log({ evento: 'Clique na interface', rotulo: label });
+    if (keywords.test(label) || /^(salvar|confirmar|finalizar|enviar)$/i.test(label)) log({ evento: 'Clique na interface', rotulo: label });
   }, true);
   document.addEventListener('submit', event => {
     const form = event.target;
@@ -125,4 +125,5 @@
     if (keywords.test(labels) || keywords.test(location.pathname)) log({ evento: 'Formulário enviado', campos: Array.from(form.elements).slice(0, 35).map(el => sensitive.test(el.name || '') ? '[protegido]' : String(el.name || el.tagName).slice(0, 45)) });
   }, true);
   window.__ecRegistroDiag = { relatorio: () => events.map(e => ({ ...e })), limpar: () => { events.length = 0; paint(); } };
+  log({ evento: 'Monitor iniciado', versao: '1.2.0', origem: location.hostname });
 })();
