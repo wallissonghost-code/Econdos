@@ -2,18 +2,46 @@
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cadastro de encomendas — protótipo</title>
 <style>
-:root{font-family:system-ui,Arial;color-scheme:dark;background:#0e1726;color:#e9f0fa}body{margin:0;padding:24px}main{max-width:650px;margin:auto}h1{font-size:1.6rem}p{color:#b9c6d7;line-height:1.5}label{display:block;margin:18px 0 6px;font-weight:600}input,textarea,button{font:inherit;box-sizing:border-box}input,textarea{width:100%;padding:12px;border:1px solid #52627a;background:#1a2739;color:white;border-radius:9px}button{border:0;border-radius:9px;background:#3979e6;color:white;padding:12px 18px;cursor:pointer;margin-top:18px}button:disabled{opacity:.45;cursor:not-allowed}.panel{background:#18263a;border:1px solid #32445d;padding:18px;border-radius:12px;margin-top:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.warning{color:#ffd38c}small{color:#b9c6d7}
+:root{font-family:system-ui,Arial;color-scheme:dark;background:#0e1726;color:#e9f0fa}body{margin:0;padding:24px}main{max-width:650px;margin:auto}h1{font-size:1.6rem}p{color:#b9c6d7;line-height:1.5}label{display:block;margin:18px 0 6px;font-weight:600}input,textarea,button{font:inherit;box-sizing:border-box}input,textarea{width:100%;padding:12px;border:1px solid #52627a;background:#1a2739;color:white;border-radius:9px}button{border:0;border-radius:9px;background:#3979e6;color:white;padding:12px 18px;cursor:pointer;margin-top:18px}button:disabled{opacity:.45;cursor:not-allowed}.panel{background:#18263a;border:1px solid #32445d;padding:18px;border-radius:12px;margin-top:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.warning{color:#ffd38c}small{color:#b9c6d7}.tabs{display:flex;gap:8px;margin:20px 0}.tabs button{margin:0;flex:1;background:#263b57}.tabs button[aria-selected=true]{background:#3979e6}.hidden{display:none}.status{font-weight:600;color:#ffd38c}
 </style></head><body><main><h1>Cadastro de encomendas</h1>
 <p>Protótipo independente do eCondos. Simula a montagem de um cadastro sem enviar dados à API.</p>
 <div class="panel"><strong class="warning">Modo seguro: somente simulação</strong><p>O formato do vínculo da unidade, a referência da imagem e a autenticação ainda não foram validados. O envio real está desativado.</p></div>
-<form id="form"><label for="unit">Unidade (exemplo: 2/999)</label><input id="unit" required placeholder="2/999" autocomplete="off">
+<nav class="tabs" aria-label="Abas"><button type="button" id="tab-cadastro" aria-selected="true">Cadastro</button><button type="button" id="tab-auth" aria-selected="false">Autenticação</button></nav>
+<section id="auth-section" class="panel hidden">
+<h2>Autenticação eCondos</h2>
+<p>Área preparada para integrar o login oficial após identificar o endpoint e o fluxo de autenticação. Nenhuma credencial será enviada ou armazenada neste protótipo.</p>
+<form id="auth-form" autocomplete="off">
+<label for="username">Usuário</label><input id="username" name="username" autocomplete="off" required>
+<label for="password">Senha</label><input id="password" name="password" type="password" autocomplete="off" required>
+<label><input type="checkbox" id="show-password" style="width:auto"> Mostrar senha</label>
+<button type="submit" disabled title="Endpoint de autenticação ainda não identificado">Entrar no eCondos (indisponível)</button>
+<button type="button" id="clear-auth">Limpar campos</button>
+</form>
+<p class="status" id="auth-status" role="status">Não conectado — integração de login pendente.</p>
+<p><small>Não envie usuário e senha pelo chat. Utilize apenas o site oficial para autenticação até concluirmos a integração.</small></p>
+</section>
+<div id="cadastro-section"><form id="form"><label for="unit">Unidade (exemplo: 2/999)</label><input id="unit" required placeholder="2/999" autocomplete="off">
 <label for="title">Título</label><input id="title" value="Encomenda" required>
 <label for="description">Descrição</label><textarea id="description" rows="3" placeholder="Descrição da encomenda"></textarea>
 <label for="picture">Foto</label><input id="picture" type="file" accept="image/*">
 <button type="submit">Gerar prévia (sem cadastrar)</button> <button disabled type="button" title="Aguardando validação do formato">Criar encomenda no eCondos</button></form>
-<section class="panel" aria-live="polite"><strong>Prévia técnica</strong><pre id="preview">Preencha o formulário e clique em Gerar prévia.</pre></section>
+<section class="panel" aria-live="polite"><strong>Prévia técnica</strong><pre id="preview">Preencha o formulário e clique em Gerar prévia.</pre></section></div>
 <small>Não cole tokens, cookies, dados de moradores ou identificadores de sessão neste formulário.</small>
 </main><script>
+const tabCadastro=document.getElementById('tab-cadastro');
+const tabAuth=document.getElementById('tab-auth');
+function setTab(auth){
+ document.getElementById('auth-section').classList.toggle('hidden',!auth);
+ document.getElementById('cadastro-section').classList.toggle('hidden',auth);
+ tabCadastro.setAttribute('aria-selected',String(!auth));
+ tabAuth.setAttribute('aria-selected',String(auth));
+ if(!auth){document.getElementById('password').value='';document.getElementById('username').value='';}
+}
+tabCadastro.addEventListener('click',()=>setTab(false));
+tabAuth.addEventListener('click',()=>setTab(true));
+document.getElementById('show-password').addEventListener('change',e=>document.getElementById('password').type=e.target.checked?'text':'password');
+document.getElementById('clear-auth').addEventListener('click',()=>{document.getElementById('auth-form').reset();document.getElementById('password').type='password';});
+document.getElementById('auth-form').addEventListener('submit',e=>e.preventDefault());
 document.getElementById('form').addEventListener('submit',e=>{
  e.preventDefault();
  const file=document.getElementById('picture').files[0];
