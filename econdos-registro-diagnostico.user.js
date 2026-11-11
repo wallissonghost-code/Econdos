@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de Registro de Encomendas
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.2.0
+// @version      1.3.0
 // @description  Observa o fluxo de cadastro e upload de encomendas sem modificar requisições ou registrar dados pessoais.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
@@ -26,6 +26,21 @@
     const m = String(method).toUpperCase();
     try { const u = new URL(url, location.href); return (u.protocol === 'https:' && (u.hostname === 'econdos.com.br' || u.hostname.endsWith('.econdos.com.br'))) && (/^(POST|PUT|PATCH|DELETE)$/.test(m) || keywords.test(u.pathname)); } catch { return false; }
   };
+  // Estrutura profunda sem valores: evita expor moradores, identificadores e credenciais.
+  const schema = (value, depth = 0) => {
+    if (depth > 6) return '[profundidade limitada]';
+    if (value === null) return { tipo: 'null' };
+    if (Array.isArray(value)) return { tipo: 'array', quantidade: value.length, itens: value.slice(0, 3).map(v => schema(v, depth + 1)) };
+    if (typeof value === 'object') {
+      return { tipo: 'objeto', propriedades: Object.fromEntries(
+        Object.entries(value).slice(0, 50).map(([key, val]) => [
+          sensitive.test(key) ? '[campo sensível]' : key.slice(0, 60),
+          sensitive.test(key) ? { tipo: Array.isArray(val) ? 'array' : typeof val, protegido: true } : schema(val, depth + 1)
+        ])
+      ) };
+    }
+    return { tipo: typeof value, valor: '[omitido]' };
+  };
   const bodyInfo = body => {
     if (body instanceof FormData) {
       const entries = Array.from(body.entries());
@@ -39,7 +54,7 @@
     if (typeof body === 'string') {
       try {
         const obj = JSON.parse(body);
-        if (obj && typeof obj === 'object') return { tipo: 'JSON', campos: Object.keys(obj).slice(0, 35).map(k => sensitive.test(k) ? '[protegido]' : k.slice(0, 45)) };
+        if (obj && typeof obj === 'object') return { tipo: 'JSON', estrutura: schema(obj) };
       } catch {}
       return { tipo: 'texto', tamanhoCaracteres: body.length };
     }
@@ -67,7 +82,7 @@
     panel.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;background:#17212b;color:white;padding:12px;border-radius:10px;font:12px Arial;max-width:340px;box-shadow:0 3px 16px #0006';
     panel.innerHTML = '<b>Registro de encomendas · diagnóstico</b><div style="margin:8px 0">Eventos: <span data-count>0</span></div><div data-last style="margin:8px 0;overflow-wrap:anywhere"></div><button type="button" data-copy>Copiar relatório</button> <button type="button" data-clear>Limpar</button> <button type="button" data-close>Fechar</button>';
     panel.querySelector('[data-copy]').onclick = () => {
-      const data = JSON.stringify({ versao: '1.2.0', eventos: events }, null, 2);
+      const data = JSON.stringify({ versao: '1.3.0', eventos: events }, null, 2);
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(data).catch(() => console.log(data));
       else console.log(data);
     };
@@ -125,5 +140,5 @@
     if (keywords.test(labels) || keywords.test(location.pathname)) log({ evento: 'Formulário enviado', campos: Array.from(form.elements).slice(0, 35).map(el => sensitive.test(el.name || '') ? '[protegido]' : String(el.name || el.tagName).slice(0, 45)) });
   }, true);
   window.__ecRegistroDiag = { relatorio: () => events.map(e => ({ ...e })), limpar: () => { events.length = 0; paint(); } };
-  log({ evento: 'Monitor iniciado', versao: '1.2.0', origem: location.hostname });
+  log({ evento: 'Monitor iniciado', versao: '1.3.0', origem: location.hostname });
 })();
