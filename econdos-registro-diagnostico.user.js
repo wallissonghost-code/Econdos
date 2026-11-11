@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         eCondos - Diagnóstico de Registro de Encomendas
 // @namespace    https://github.com/wallissonghost-code/Econdos
-// @version      1.5.0
+// @version      1.6.0
 // @description  Observa o fluxo de cadastro e upload de encomendas sem modificar requisições ou registrar dados pessoais.
 // @match        https://*.econdos.com.br/*
 // @match        https://econdos.com.br/*
@@ -13,7 +13,7 @@
   if (window.__ecRegistroDiag) return;
   const events = [];
   const MAX = 150;
-  const keywords = /encomenda|entrega|pacote|package|parcel|delivery|upload|anexo|attachment|arquivo|file|registro|recebimento|criar|cadastrar/i;
+  const keywords = /login|logar|entrar|signin|sign-in|session|sessao|autentic|encomenda|entrega|pacote|package|parcel|delivery|upload|anexo|attachment|arquivo|file|registro|recebimento|criar|cadastrar/i;
   const sensitive = /token|auth|senha|password|secret|cookie|cpf|cnpj|email|telefone|phone|nome|name|address|endereco|documento|resident|morador|apartamento|unit|bloco|codigo|code|id/i;
   const safePath = value => {
     try {
@@ -94,7 +94,7 @@
     panel.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;background:#17212b;color:white;padding:12px;border-radius:10px;font:12px Arial;max-width:340px;box-shadow:0 3px 16px #0006';
     panel.innerHTML = '<b>Registro de encomendas · diagnóstico</b><div style="margin:8px 0">Eventos: <span data-count>0</span></div><div data-last style="margin:8px 0;overflow-wrap:anywhere"></div><button type="button" data-copy>Copiar relatório</button> <button type="button" data-clear>Limpar</button> <button type="button" data-close>Fechar</button>';
     panel.querySelector('[data-copy]').onclick = () => {
-      const data = JSON.stringify({ versao: '1.5.0', eventos: events }, null, 2);
+      const data = JSON.stringify({ versao: '1.6.0', eventos: events }, null, 2);
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(data).catch(() => console.log(data));
       else console.log(data);
     };
@@ -114,7 +114,7 @@
     const start = performance.now();
     const info = bodyInfo(init.body);
     return originalFetch.apply(this, args).then(response => {
-      log({ evento: 'HTTP fetch', metodo: method, caminho: safePath(url), status: response.status, duracaoMs: Math.round(performance.now() - start), envio: info });
+      log({ evento: 'HTTP fetch', metodo: method, caminho: safePath(url), status: response.status, duracaoMs: Math.round(performance.now() - start), envio: info, autenticacao: { authorizationPresente: !!(init.headers && (new Headers(init.headers)).has('authorization')), credentials: init.credentials || 'padrão do navegador' } });
       if (uploadPath(url)) response.clone().text().then(t => log({ evento: 'Resposta upload fetch', caminho: safePath(url), resposta: responseInfo(t.slice(0, 100000)) })).catch(() => {});
       return response;
     }, error => {
@@ -124,8 +124,17 @@
   };
   const xhrOpen = XMLHttpRequest.prototype.open;
   const xhrSend = XMLHttpRequest.prototype.send;
+  const xhrHeader = XMLHttpRequest.prototype.setRequestHeader;
+  XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+    if (this.__ecRegistro) {
+      const k = String(name).toLowerCase();
+      if (k === 'authorization') this.__ecRegistro.authorization = true;
+      if (k === 'content-type') this.__ecRegistro.contentType = String(value).split(';')[0].slice(0, 80);
+    }
+    return xhrHeader.apply(this, arguments);
+  };
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-    this.__ecRegistro = { method, url };
+    this.__ecRegistro = { method, url, authorization: false };
     return xhrOpen.call(this, method, url, ...rest);
   };
   XMLHttpRequest.prototype.send = function(body) {
@@ -137,7 +146,8 @@
         log({
           evento: 'HTTP XHR', metodo: String(req.method).toUpperCase(),
           caminho: safePath(req.url), status: this.status,
-          duracaoMs: Math.round(performance.now() - start), envio
+          duracaoMs: Math.round(performance.now() - start), envio,
+          autenticacao: { authorizationPresente: !!req.authorization, cookiesDeSessao: 'não inspecionados', contentType: req.contentType || 'não informado' }
         });
         if (uploadPath(req.url)) {
           try {
@@ -161,5 +171,5 @@
     if (keywords.test(labels) || keywords.test(location.pathname)) log({ evento: 'Formulário enviado', campos: Array.from(form.elements).slice(0, 35).map(el => sensitive.test(el.name || '') ? '[protegido]' : String(el.name || el.tagName).slice(0, 45)) });
   }, true);
   window.__ecRegistroDiag = { relatorio: () => events.map(e => ({ ...e })), limpar: () => { events.length = 0; paint(); } };
-  log({ evento: 'Monitor iniciado', versao: '1.5.0', origem: location.hostname });
+  log({ evento: 'Monitor iniciado', versao: '1.6.0', origem: location.hostname });
 })();
